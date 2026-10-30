@@ -6,15 +6,17 @@
 FROM node:24-alpine AS base
 WORKDIR /app
 
-# Every dependency, to compile the server and bundle the frontend.
+# Every dependency, to compile the server and bundle the frontend. Recent
+# npm versions build better-sqlite3 from source, hence the C toolchain; it
+# stays in this stage and never reaches the final image.
 FROM base AS deps
+RUN apk add --no-cache python3 make g++
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Only what the server needs at runtime.
-FROM base AS production-deps
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# Only what the server needs at runtime, with the SQLite module built above.
+FROM deps AS production-deps
+RUN npm prune --omit=dev
 
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
