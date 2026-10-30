@@ -1,0 +1,96 @@
+# Checks the code, then builds the Docker image and pushes it to the GitHub
+# Container Registry (ghcr.io/<owner>/<repo>). On main, Dokploy is asked to
+# redeploy when the DOKPLOY_* secrets are set.
+
+name: Docker image
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Typecheck, lint and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run lint
+
+      # The tests read .env.example plus .env.test, with a throwaway key.
+      - name: Prepare the test environment
+        run: |
+          cp .env.example .env
+          echo "APP_KEY=$(openssl rand -base64 32)" >> "$GITHUB_ENV"
+
+      - run: npm test
+
+  image:
+    name: Build and push to GHCR
+    needs: check
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      DOKPLOY_URL: ${{ secrets.DOKPLOY_URL }}
+    steps:
+      - uses: actions/checkout@v5
+
+      # Registry names must be lowercase, GitHub owners often are not.
+      - name: Image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # latest for main, sha-<commit> for every build, 1.2.3 for a v1.2.3 tag.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.image.outputs.name }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha
+            type=semver,pattern={{version}}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Redeploy on Dokploy
+        if: github.ref == 'refs/heads/main' && env.DOKPLOY_URL != ''
+        env:
+          DOKPLOY_API_KEY: ${{ secrets.DOKPLOY_API_KEY }}
+          DOKPLOY_APPLICATION_ID: ${{ secrets.DOKPLOY_APPLICATION_ID }}
+        run: |
+          curl --fail-with-body -sS -X POST "${DOKPLOY_URL%/}/api/application.deploy" \
+            -H "x-api-key: ${DOKPLOY_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "{\"applicationId\": \"${DOKPLOY_APPLICATION_ID}\"}"

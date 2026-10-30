@@ -1,0 +1,10 @@
+# Development mail server: every email sent by the app is caught here
+# instead of reaching real inboxes. Open http://localhost:8025 to read them.
+services:
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: missivox_mailpit
+    restart: unless-stopped
+    ports:
+      - '1025:1025'
+      - '8025:8025'

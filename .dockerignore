@@ -1,0 +1,18 @@
+# Rebuilt inside the image
+node_modules
+build
+public/assets
+tmp
+
+# Secrets and local data: settings come from the host (Dokploy)
+.env
+.env.*
+
+# Not needed to build
+.git
+.github
+.claude
+docker-compose.yml
+Dockerfile
+.dockerignore
+*.log

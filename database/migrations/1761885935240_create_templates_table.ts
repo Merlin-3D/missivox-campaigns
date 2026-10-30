@@ -1,0 +1,30 @@
+import { BaseSchema } from '@adonisjs/lucid/schema'
+
+export default class extends BaseSchema {
+  protected tableName = 'templates'
+
+  async up() {
+    this.schema.createTable(this.tableName, (table) => {
+      table.increments('id').notNullable()
+      table
+        .integer('workspace_id')
+        .unsigned()
+        .notNullable()
+        .references('id')
+        .inTable('workspaces')
+        .onDelete('CASCADE')
+        .index()
+      table.string('name', 120).notNullable()
+      table.string('subject', 255).nullable()
+      table.string('editor', 10).notNullable().defaultTo('visual')
+      table.text('body').notNullable()
+
+      table.timestamp('created_at').notNullable()
+      table.timestamp('updated_at').nullable()
+    })
+  }
+
+  async down() {
+    this.schema.dropTable(this.tableName)
+  }
+}
